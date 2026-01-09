@@ -1,13 +1,22 @@
 import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
 
-// Falls du Node 18+ nutzt, ist fetch global verfügbar.
-// Sonst: import fetch from 'node-fetch';
-
 export default async function handler(req, res) {
+
+  // ---------- CORS ----------
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  // --------------------------
+
   try {
     if (req.method !== 'POST') return res.status(405).end();
 
     const { items, total, currency = 'CHF', customer } = req.body;
+
 
     if (!items || !items.length) {
       return res.status(400).json({ error: 'Missing items' });
