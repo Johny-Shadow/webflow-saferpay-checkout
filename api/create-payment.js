@@ -40,11 +40,11 @@ export default async function handler(req, res) {
     // 2) In Airtable speichern
     // -----------------------------
     const airtableRes = await fetch(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`,
+      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TOKEN}`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
+          Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
