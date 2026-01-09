@@ -1,3 +1,5 @@
+import { sendOrderMail } from '../lib/mailer.js';
+
 export default async function handler(req, res) {
   try {
     const { result, orderId } = req.query;
@@ -17,7 +19,7 @@ export default async function handler(req, res) {
       `https://api.airtable.com/v0/${airtableBase}/${tableName}`;
 
     // ------------------------
-    // 1) Order suchen
+    // 1) Order holen
     // ------------------------
     const findRes = await fetch(
       `${airtableUrl}?filterByFormula=${encodeURIComponent(`{orderId}="${orderId}"`)}`,
@@ -35,7 +37,9 @@ export default async function handler(req, res) {
       return res.status(404).send('Order not found');
     }
 
-    const recordId = findData.records[0].id;
+    const record = findData.records[0];
+    const recordId = record.id;
+    const order = record.fields;
 
     // ------------------------
     // 2) Status updaten
@@ -55,7 +59,25 @@ export default async function handler(req, res) {
     );
 
     // ------------------------
-    // 3) Weiterleitung Kunde
+    // 3) Bestätigungsmail
+    // ------------------------
+    if (status === 'paid') {
+      try {
+        await sendOrderMail({
+          orderId,
+          email: order.email,
+          amount: order.amount,
+          firstName: order.firstName,
+          items: order.itemsDetailed || []
+        });
+      } catch (mailErr) {
+        console.error('MAIL ERROR:', mailErr);
+        // Zahlung ist trotzdem gültig → kein Abbruch
+      }
+    }
+
+    // ------------------------
+    // 4) Redirect Kunde
     // ------------------------
     const redirect =
       status === 'paid'
@@ -69,3 +91,4 @@ export default async function handler(req, res) {
     return res.status(500).send('Server error');
   }
 }
+
