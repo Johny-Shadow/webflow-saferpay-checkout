@@ -1,16 +1,80 @@
-
 import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
+
+// Falls du Node 18+ nutzt, ist fetch global verfügbar.
+// Sonst: import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') return res.status(405).end();
 
-    const { items, total, email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Missing email' });
+    const { items, total, currency = 'CHF', customer } = req.body;
+
+    if (!items || !items.length) {
+      return res.status(400).json({ error: 'Missing items' });
+    }
+    if (!customer || !customer.email) {
+      return res.status(400).json({ error: 'Missing customer data' });
+    }
 
     const orderId = 'WF-' + Date.now();
-    const amount = Math.round(Number(total));
+    const amount = Math.round(Number(total)); // already in cents
 
+    // -----------------------------
+    // 1) Order-Text bauen
+    // -----------------------------
+    const itemsText = items
+      .map(i => `${i.name} x${i.quantity}`)
+      .join(', ')
+      .slice(0, 200);
+
+    // -----------------------------
+    // 2) In Airtable speichern
+    // -----------------------------
+    const airtableRes = await fetch(
+      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          records: [
+            {
+              fields: {
+                orderId,
+                email: customer.email,
+                amount: amount / 100,
+                currency,
+                status: 'pending',
+                items: itemsText,
+
+                firstName: customer.firstName || '',
+                lastName: customer.lastName || '',
+                company: customer.company || '',
+                phone: customer.phone || '',
+                street: customer.street || '',
+                houseNumber: customer.houseNumber || '',
+                zip: customer.zip || '',
+                city: customer.city || '',
+
+                createdAt: new Date().toISOString()
+              }
+            }
+          ]
+        })
+      }
+    );
+
+    const airtableData = await airtableRes.json();
+    if (!airtableRes.ok) {
+      console.error('Airtable error:', airtableData);
+      return res.status(500).json({ error: 'Airtable save failed' });
+    }
+
+    // -----------------------------
+    // 3) Saferpay Payment starten
+    // -----------------------------
     const payload = {
       RequestHeader: {
         SpecVersion: '1.30',
@@ -20,9 +84,9 @@ export default async function handler(req, res) {
       },
       TerminalId: process.env.SAFERPAY_TERMINAL_ID,
       Payment: {
-        Amount: { Value: amount, CurrencyCode: 'CHF' },
+        Amount: { Value: amount, CurrencyCode: currency },
         OrderId: orderId,
-        Description: 'Webflow Bestellung'
+        Description: itemsText || 'Webflow Bestellung'
       },
       ReturnUrls: {
         Success: `${process.env.RETURN_BASE_URL}/api/saferpay-return?result=success&orderId=${orderId}`,
@@ -43,11 +107,19 @@ export default async function handler(req, res) {
     );
 
     const data = await r.json();
+    if (!r.ok || !data.RedirectUrl) {
+      console.error('Saferpay error:', data);
+      return res.status(500).json({ error: 'Saferpay init failed' });
+    }
 
-    if (!r.ok) return res.status(500).json(data);
+    // -----------------------------
+    // 4) Fertig
+    // -----------------------------
+    return res.json({ redirectUrl: data.RedirectUrl, orderId });
 
-    res.json({ redirectUrl: data.RedirectUrl, orderId });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(e);
+    return res.status(500).json({ error: e.message });
   }
 }
+
