@@ -1,8 +1,13 @@
 import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
 
+// Wenn dein Projekt < Node 18 läuft, dann:
+// import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
 
-  // ---------- CORS ----------
+  // ------------------------
+  // CORS
+  // ------------------------
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -10,13 +15,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-  // --------------------------
 
   try {
     if (req.method !== 'POST') return res.status(405).end();
 
     const { items, total, currency = 'CHF', customer } = req.body;
-
 
     if (!items || !items.length) {
       return res.status(400).json({ error: 'Missing items' });
@@ -28,62 +31,70 @@ export default async function handler(req, res) {
     const orderId = 'WF-' + Date.now();
     const amount = Math.round(Number(total)); // already in cents
 
-    // -----------------------------
-    // 1) Order-Text bauen
-    // -----------------------------
+    // ------------------------
+    // Order-Text bauen
+    // ------------------------
     const itemsText = items
       .map(i => `${i.name} x${i.quantity}`)
       .join(', ')
       .slice(0, 200);
 
-    // -----------------------------
-    // 2) In Airtable speichern
-    // -----------------------------
-    const airtableRes = await fetch(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TOKEN}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          records: [
-            {
-              fields: {
-                orderId,
-                email: customer.email,
-                amount: amount / 100,
-                currency,
-                status: 'pending',
-                items: itemsText,
+    // ------------------------
+    // Airtable vorbereiten
+    // ------------------------
+    const tableName = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME);
+    const airtableUrl =
+      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
 
-                firstName: customer.firstName || '',
-                lastName: customer.lastName || '',
-                company: customer.company || '',
-                phone: customer.phone || '',
-                street: customer.street || '',
-                houseNumber: customer.houseNumber || '',
-                zip: customer.zip || '',
-                city: customer.city || '',
+    console.log('AIRTABLE BASE:', process.env.AIRTABLE_BASE_ID);
+    console.log('AIRTABLE TABLE:', process.env.AIRTABLE_TABLE_NAME);
+    console.log('AIRTABLE TOKEN SET:', !!process.env.AIRTABLE_TOKEN);
 
-                createdAt: new Date().toISOString()
-              }
-            }
-          ]
-        })
-      }
-    );
+    const airtablePayload = {
+      records: [
+        {
+          fields: {
+            orderId,
+            email: customer.email,
+            amount: amount / 100,
+            currency,
+            status: 'pending',
+            items: itemsText,
+
+            firstName: customer.firstName || '',
+            lastName: customer.lastName || '',
+            company: customer.company || '',
+            phone: customer.phone || '',
+            street: customer.street || '',
+            houseNumber: customer.houseNumber || '',
+            zip: customer.zip || '',
+            city: customer.city || '',
+
+            createdAt: new Date().toISOString()
+          }
+        }
+      ]
+    };
+
+    const airtableRes = await fetch(airtableUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(airtablePayload)
+    });
 
     const airtableData = await airtableRes.json();
+
     if (!airtableRes.ok) {
       console.error('Airtable error:', airtableData);
       return res.status(500).json({ error: 'Airtable save failed' });
     }
 
-    // -----------------------------
-    // 3) Saferpay Payment starten
-    // -----------------------------
+    // ------------------------
+    // Saferpay Payment starten
+    // ------------------------
     const payload = {
       RequestHeader: {
         SpecVersion: '1.30',
@@ -116,18 +127,22 @@ export default async function handler(req, res) {
     );
 
     const data = await r.json();
+
     if (!r.ok || !data.RedirectUrl) {
       console.error('Saferpay error:', data);
       return res.status(500).json({ error: 'Saferpay init failed' });
     }
 
-    // -----------------------------
-    // 4) Fertig
-    // -----------------------------
-    return res.json({ redirectUrl: data.RedirectUrl, orderId });
+    // ------------------------
+    // Fertig
+    // ------------------------
+    return res.json({
+      redirectUrl: data.RedirectUrl,
+      orderId
+    });
 
   } catch (e) {
-    console.error(e);
+    console.error('SERVER ERROR:', e);
     return res.status(500).json({ error: e.message });
   }
 }
