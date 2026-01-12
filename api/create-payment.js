@@ -1,11 +1,7 @@
 import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
 import { createOrder } from '../lib/airtable.js';
 
-function safeJsonStringify(obj) {
-  try { return JSON.stringify(obj); } catch { return '[]'; }
-}
-
-// total kommt bei dir bereits in Rappen (z.B. 49800)
+// total kommt bereits in Rappen (z.B. 49800)
 function normalizeAmountMinor(total) {
   const n = Number(total);
   if (!Number.isFinite(n)) return 0;
@@ -31,15 +27,15 @@ export default async function handler(req, res) {
     const items = Array.isArray(body.items) ? body.items : [];
     const currency = body.currency || 'CHF';
 
-    const email = customer.email || body.email || '';
-    const company = customer.company || body.firma || '';
-    const firstName = customer.firstName || body.firstName || '';
-    const lastName = customer.lastName || body.lastName || '';
-    const phone = customer.phone || body.phone || '';
-    const street = customer.street || body.street || '';
-    const houseNumber = customer.houseNumber || body.houseNumber || '';
-    const zip = customer.zip || body.zip || '';
-    const city = customer.city || body.city || '';
+    const email = customer.email || '';
+    const company = customer.company || '';
+    const firstName = customer.firstName || '';
+    const lastName = customer.lastName || '';
+    const phone = customer.phone || '';
+    const street = customer.street || '';
+    const houseNumber = customer.houseNumber || '';
+    const zip = customer.zip || '';
+    const city = customer.city || '';
 
     if (!email) return res.status(400).json({ error: 'Missing email' });
     if (!items.length) return res.status(400).json({ error: 'Missing items' });
@@ -48,9 +44,8 @@ export default async function handler(req, res) {
       `P-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}` +
       `-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // total ist bereits "minor units" (Rappen)
+    // Betrag in Rappen
     const amountMinor = normalizeAmountMinor(body.total);
-
     if (!amountMinor || amountMinor <= 0) {
       return res.status(400).json({ error: 'Missing/invalid total' });
     }
@@ -85,15 +80,13 @@ export default async function handler(req, res) {
     const data = await r.json();
     if (!r.ok) return res.status(500).json(data);
 
-    const saferpayToken = data.Token;
+    // Betrag für Airtable in CHF
+    const amountChf = amountMinor / 100;
 
-    // Für Airtable: Betrag in CHF (49800 -> 498.00)
-    const amountChf = Math.round(amountMinor) / 100;
-
-    // Items Text + JSON
+    // Produkte lesbar
     const itemsText = items.map(i => `${i.name} x${i.quantity}`).join(', ');
-    const itemsJson = safeJsonStringify(items);
 
+    // ⚠️ HIER NUR FELDER, DIE ES IN AIRTABLE WIRKLICH GIBT
     await createOrder({
       Name: `${firstName} ${lastName}`.trim() || email,
       orderId,
@@ -102,7 +95,6 @@ export default async function handler(req, res) {
       currency,
       status: 'PENDING',
       items: itemsText,
-      paymentMethod: '',
 
       company,
       firstName,
@@ -112,9 +104,7 @@ export default async function handler(req, res) {
       houseNumber,
       zip,
       city,
-      country: 'Schweiz',
 
-      saferpayToken,
       createdAt: new Date().toISOString()
     });
 
@@ -125,3 +115,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+
