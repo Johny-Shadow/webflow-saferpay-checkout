@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------------
-    // 🆕 Order-ID erzeugen: P-YYYYMMDD-XXXX
+    // 🆕 Order-ID: P-YYYYMMDD-XXXX
     // ------------------------
     const now = new Date();
     const ymd =
@@ -43,63 +43,12 @@ export default async function handler(req, res) {
     const amount = Math.round(Number(total)); // already in cents
 
     // ------------------------
-    // Order-Text bauen
+    // Order-Text
     // ------------------------
     const itemsText = items
       .map(i => `${i.name} x${i.quantity}`)
       .join(', ')
       .slice(0, 200);
-
-    // ------------------------
-    // Airtable vorbereiten
-    // ------------------------
-    const tableName = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME);
-    const airtableUrl =
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
-
-    const airtablePayload = {
-      records: [
-        {
-          fields: {
-            orderId,
-            email: customer.email,
-            amount: amount / 100,
-            currency,
-            status: 'pending',
-            items: itemsText,
-
-            firstName: customer.firstName || '',
-            lastName: customer.lastName || '',
-            company: customer.company || '',
-            phone: customer.phone || '',
-            street: customer.street || '',
-            houseNumber: customer.houseNumber || '',
-            zip: customer.zip || '',
-            city: customer.city || '',
-            saferpayToken: saferpayToken,
-
-
-            createdAt: new Date() // passt für Datumsfeld in Airtable
-          }
-        }
-      ]
-    };
-
-    const airtableRes = await fetch(airtableUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(airtablePayload)
-    });
-
-    const airtableData = await airtableRes.json();
-
-    if (!airtableRes.ok) {
-      console.error('Airtable error:', airtableData);
-      return res.status(500).json({ error: 'Airtable save failed' });
-    }
 
     // ------------------------
     // Saferpay Payment starten
@@ -136,12 +85,67 @@ export default async function handler(req, res) {
     );
 
     const data = await r.json();
-const saferpayToken = data.Token;
-
 
     if (!r.ok || !data.RedirectUrl) {
       console.error('Saferpay error:', data);
       return res.status(500).json({ error: 'Saferpay init failed' });
+    }
+
+    // ------------------------
+    // ✅ HIER Token sauber holen
+    // ------------------------
+    const saferpayToken = data.Token;
+
+    // ------------------------
+    // Airtable vorbereiten
+    // ------------------------
+    const tableName = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME);
+    const airtableUrl =
+      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
+
+    const airtablePayload = {
+      records: [
+        {
+          fields: {
+            orderId,
+            email: customer.email,
+            amount: amount / 100,
+            currency,
+            status: 'pending',
+            items: itemsText,
+
+            firstName: customer.firstName || '',
+            lastName: customer.lastName || '',
+            company: customer.company || '',
+            phone: customer.phone || '',
+            street: customer.street || '',
+            houseNumber: customer.houseNumber || '',
+            zip: customer.zip || '',
+            city: customer.city || '',
+
+            // 🔥 NEU
+            saferpayToken: saferpayToken,
+
+            createdAt: new Date()
+          }
+        }
+      ]
+    };
+
+    const airtableRes = await fetch(airtableUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(airtablePayload)
+    });
+
+    const airtableData = await airtableRes.json();
+
+    if (!airtableRes.ok) {
+      console.error('Airtable error:', airtableData);
+      return res.status(500).json({ error: 'Airtable save failed' });
     }
 
     // ------------------------
