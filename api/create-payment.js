@@ -25,19 +25,35 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const {
-      items,
-      total,
-      firma,
-      firstName,
-      lastName,
-      email,
-      phone,
-      street,
-      houseNumber,
-      zip,
-      city
-    } = req.body;
+const body = req.body || {};
+
+const items =
+  body.items ||
+  body.cartItems ||
+  body.products ||
+  [];
+
+const total =
+  body.total ||
+  body.amount ||
+  body.sum ||
+  0;
+
+const email =
+  body.email ||
+  body.mail ||
+  body.customerEmail ||
+  '';
+
+const firma = body.firma || '';
+const firstName = body.firstName || body.vorname || '';
+const lastName  = body.lastName  || body.nachname || '';
+const phone     = body.phone || '';
+const street    = body.street || '';
+const houseNumber = body.houseNumber || '';
+const zip       = body.zip || '';
+const city      = body.city || '';
+
 
     if (!email) return res.status(400).json({ error: 'Missing email' });
     if (!Array.isArray(items) || items.length === 0) {
