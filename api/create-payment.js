@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     const currency = body.currency || 'CHF';
 
     const email = customer.email || body.email || '';
-    const firma = customer.company || body.firma || '';
+    const company = customer.company || body.firma || '';
     const firstName = customer.firstName || body.firstName || '';
     const lastName = customer.lastName || body.lastName || '';
     const phone = customer.phone || body.phone || '';
@@ -104,7 +104,7 @@ export default async function handler(req, res) {
       items: itemsText,
       paymentMethod: '',
 
-      firma,
+      company,
       firstName,
       lastName,
       phone,
