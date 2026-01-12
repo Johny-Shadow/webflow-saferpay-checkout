@@ -1,4 +1,23 @@
 import { sendOrderMail } from '../lib/mailer.js';
+import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
+
+// ------------------------
+// Zahlungsart hübsch machen
+// ------------------------
+function mapPaymentBrand(brand) {
+  if (!brand) return 'Onlinezahlung';
+
+  const b = brand.toUpperCase();
+
+  if (b.includes('TWINT')) return 'TWINT';
+  if (b.includes('PAYPAL')) return 'PayPal';
+  if (b.includes('VISA')) return 'Kreditkarte (VISA)';
+  if (b.includes('MASTERCARD')) return 'Kreditkarte (Mastercard)';
+  if (b.includes('AMEX')) return 'Kreditkarte (American Express)';
+  if (b.includes('POSTFINANCE')) return 'PostFinance';
+
+  return brand;
+}
 
 export default async function handler(req, res) {
   try {
@@ -11,13 +30,15 @@ export default async function handler(req, res) {
     const status = result === 'success' ? 'paid' : 'failed';
 
     // ------------------------
-    // Airtable Status updaten
+    // Airtable vorbereiten
     // ------------------------
     const tableName = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME);
     const airtableUrl =
       `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
 
-    // 1) Datensatz suchen
+    // ------------------------
+    // 1) Bestellung suchen
+    // ------------------------
     const findRes = await fetch(
       `${airtableUrl}?filterByFormula=${encodeURIComponent(`{orderId}='${orderId}'`)}`,
       {
@@ -37,7 +58,9 @@ export default async function handler(req, res) {
     const record = findData.records[0];
     const fields = record.fields;
 
-    // 2) Status setzen
+    // ------------------------
+    // 2) Status updaten
+    // ------------------------
     const updateRes = await fetch(
       `${airtableUrl}/${record.id}`,
       {
@@ -58,7 +81,48 @@ export default async function handler(req, res) {
     }
 
     // ------------------------
-    // Mail nur bei Erfolg
+    // 3) Zahlungsart von Saferpay holen
+    // ------------------------
+    let paymentMethod = 'Saferpay';
+
+    if (status === 'paid' && fields.saferpayToken) {
+      try {
+        const assertRes = await fetch(
+          `${saferpayBaseUrl()}/Payment/v1/PaymentPage/Assert`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: saferpayAuthHeader(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              RequestHeader: {
+                SpecVersion: '1.30',
+                CustomerId: process.env.SAFERPAY_CUSTOMER_ID,
+                RequestId: orderId,
+                RetryIndicator: 0
+              },
+              Token: fields.saferpayToken
+            })
+          }
+        );
+
+        const assertData = await assertRes.json();
+
+        const brand =
+          assertData?.PaymentMeans?.Brand ||
+          assertData?.PaymentMeans?.DisplayText ||
+          '';
+
+        paymentMethod = mapPaymentBrand(brand);
+
+      } catch (e) {
+        console.error('SAFERPAY ASSERT ERROR:', e);
+      }
+    }
+
+    // ------------------------
+    // 4) Mail nur bei Erfolg
     // ------------------------
     if (status === 'paid') {
 
@@ -67,10 +131,16 @@ export default async function handler(req, res) {
         email: fields.email,
         amount: fields.amount,
 
-        firstName: fields.firstName || '',
-        lastName: fields.lastName || '',
+        firstName: fields.firstName,
+        lastName: fields.lastName,
 
-        // 🔹 Produkte
+        street: fields.street,
+        houseNumber: fields.houseNumber,
+        zip: fields.zip,
+        city: fields.city,
+
+        paymentMethod,
+
         items: (fields.items || '')
           .split(',')
           .map(s => {
@@ -79,23 +149,14 @@ export default async function handler(req, res) {
               name: (name || '').trim(),
               quantity: Number(qty) || 1
             };
-          }),
-
-        // 🔹 Lieferadresse (JETZT korrekt)
-        street: fields.street || '',
-        houseNumber: fields.houseNumber || '',
-        zip: fields.zip || '',
-        location: fields.city || '',   // Airtable → Mail-Template
-
-        // 🔹 Zahlungsart (vorerst fix, später von Saferpay Assert)
-        paymentMethod: 'Saferpay'
+          })
       };
 
       await sendOrderMail(orderForMail);
     }
 
     // ------------------------
-    // Redirect zurück zu Webflow
+    // 5) Redirect zurück zu Webflow
     // ------------------------
     const redirectUrl =
       status === 'paid'
@@ -109,3 +170,4 @@ export default async function handler(req, res) {
     return res.status(500).send('Return handling failed');
   }
 }
+
