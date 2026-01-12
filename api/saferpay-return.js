@@ -35,6 +35,7 @@ export default async function handler(req, res) {
     }
 
     const record = findData.records[0];
+    const fields = record.fields;
 
     // 2) Status setzen
     const updateRes = await fetch(
@@ -46,9 +47,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          fields: {
-            status
-          }
+          fields: { status }
         })
       }
     );
@@ -62,16 +61,16 @@ export default async function handler(req, res) {
     // Mail nur bei Erfolg
     // ------------------------
     if (status === 'paid') {
-      const fields = record.fields;
 
       const orderForMail = {
         orderId: fields.orderId,
         email: fields.email,
         amount: fields.amount,
 
-        firstName: fields.firstName,
-        lastName: fields.lastName,
+        firstName: fields.firstName || '',
+        lastName: fields.lastName || '',
 
+        // 🔹 Produkte
         items: (fields.items || '')
           .split(',')
           .map(s => {
@@ -80,7 +79,16 @@ export default async function handler(req, res) {
               name: (name || '').trim(),
               quantity: Number(qty) || 1
             };
-          })
+          }),
+
+        // 🔹 Lieferadresse (JETZT korrekt)
+        street: fields.street || '',
+        houseNumber: fields.houseNumber || '',
+        zip: fields.zip || '',
+        location: fields.city || '',   // Airtable → Mail-Template
+
+        // 🔹 Zahlungsart (vorerst fix, später von Saferpay Assert)
+        paymentMethod: 'Saferpay'
       };
 
       await sendOrderMail(orderForMail);
