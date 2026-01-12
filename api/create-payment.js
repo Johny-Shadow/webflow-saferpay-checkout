@@ -76,6 +76,8 @@ export default async function handler(req, res) {
             houseNumber: customer.houseNumber || '',
             zip: customer.zip || '',
             city: customer.city || '',
+            saferpayToken: saferpayToken,
+
 
             createdAt: new Date() // passt für Datumsfeld in Airtable
           }
