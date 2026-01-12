@@ -134,6 +134,8 @@ export default async function handler(req, res) {
     );
 
     const data = await r.json();
+const saferpayToken = data.Token;
+
 
     if (!r.ok || !data.RedirectUrl) {
       console.error('Saferpay error:', data);
