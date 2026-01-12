@@ -53,6 +53,7 @@ const street    = body.street || '';
 const houseNumber = body.houseNumber || '';
 const zip       = body.zip || '';
 const city      = body.city || '';
+console.log('CREATE-PAYMENT BODY:', req.body);
 
 
     if (!email) return res.status(400).json({ error: 'Missing email' });
