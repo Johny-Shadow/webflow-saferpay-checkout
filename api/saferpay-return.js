@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const fields = record.fields;
 
     // ------------------------
-    // 2) Zahlungsart via Assert holen
+    // 2) Zahlungsart via Saferpay Assert holen
     // ------------------------
     let paymentMethod = 'Saferpay';
 
@@ -74,20 +74,14 @@ export default async function handler(req, res) {
         console.log('SAFERPAY ASSERT RESPONSE:', JSON.stringify(assertData, null, 2));
 
         if (assertRes.ok) {
-          const payment =
-            assertData?.Payment ||
-            assertData?.Transaction?.Payment ||
-            {};
-
-          const brand =
-            payment?.Means?.Brand ||
-            payment?.PaymentMeans?.Brand ||
-            payment?.Method ||
-            payment?.Brand ||
+          // 🔥 GENAU DEIN RESPONSE-FORMAT
+          const method =
+            assertData?.PaymentMeans?.Brand?.PaymentMethod ||
+            assertData?.PaymentMeans?.DisplayText ||
             null;
 
-          if (brand) {
-            paymentMethod = brand.toUpperCase();
+          if (method) {
+            paymentMethod = method.toUpperCase();
           }
         }
 
