@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
 
     // ------------------------
-    // 1) Bestellung in Airtable suchen
+    // 1) Bestellung finden
     // ------------------------
     const findRes = await fetch(
       `${airtableUrl}?filterByFormula=${encodeURIComponent(`{orderId}='${orderId}'`)}`,
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const fields = record.fields;
 
     // ------------------------
-    // 2) Zahlungsart ermitteln (Saferpay Assert)
+    // 2) Zahlungsart via Assert holen
     // ------------------------
     let paymentMethod = 'Saferpay';
 
@@ -71,10 +71,24 @@ export default async function handler(req, res) {
 
         const assertData = await assertRes.json();
 
-        if (assertRes.ok && assertData?.Payment?.Means?.Brand) {
-          paymentMethod = assertData.Payment.Means.Brand;
-        } else {
-          console.warn('Saferpay assert without brand:', assertData);
+        console.log('SAFERPAY ASSERT RESPONSE:', JSON.stringify(assertData, null, 2));
+
+        if (assertRes.ok) {
+          const payment =
+            assertData?.Payment ||
+            assertData?.Transaction?.Payment ||
+            {};
+
+          const brand =
+            payment?.Means?.Brand ||
+            payment?.PaymentMeans?.Brand ||
+            payment?.Method ||
+            payment?.Brand ||
+            null;
+
+          if (brand) {
+            paymentMethod = brand.toUpperCase();
+          }
         }
 
       } catch (e) {
@@ -83,7 +97,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------------
-    // 3) Airtable updaten (Status + Zahlungsart)
+    // 3) Airtable updaten
     // ------------------------
     const updateRes = await fetch(
       `${airtableUrl}/${record.id}`,
@@ -108,7 +122,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------------
-    // 4) Mail bei Erfolg senden
+    // 4) Mail bei Erfolg
     // ------------------------
     if (status === 'paid') {
 
@@ -142,7 +156,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------------
-    // 5) Redirect zurück zu Webflow
+    // 5) Redirect
     // ------------------------
     const redirectUrl =
       status === 'paid'
@@ -156,5 +170,3 @@ export default async function handler(req, res) {
     return res.status(500).send('Return handling failed');
   }
 }
-
-
