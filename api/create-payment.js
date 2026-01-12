@@ -1,118 +1,39 @@
-import { saferpayAuthHeader, saferpayBaseUrl } from '../lib/saferpay.js';
-import { createOrder } from '../lib/airtable.js';
-
-// total kommt bereits in Rappen (z.B. 49800)
-function normalizeAmountMinor(total) {
-  const n = Number(total);
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(n);
-}
-
-export default async function handler(req, res) {
-
-  // Preflight erlauben (CORS)
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') return res.status(405).end();
-
-  try {
-    const body = req.body || {};
-    const customer = body.customer || {};
-
-    const items = Array.isArray(body.items) ? body.items : [];
-    const currency = body.currency || 'CHF';
-
-    const email = customer.email || '';
-    const company = customer.company || '';
-    const firstName = customer.firstName || '';
-    const lastName = customer.lastName || '';
-    const phone = customer.phone || '';
-    const street = customer.street || '';
-    const houseNumber = customer.houseNumber || '';
-    const zip = customer.zip || '';
-    const city = customer.city || '';
-
-    if (!email) return res.status(400).json({ error: 'Missing email' });
-    if (!items.length) return res.status(400).json({ error: 'Missing items' });
-
-    const orderId =
-      `P-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}` +
-      `-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    // Betrag in Rappen
-    const amountMinor = normalizeAmountMinor(body.total);
-    if (!amountMinor || amountMinor <= 0) {
-      return res.status(400).json({ error: 'Missing/invalid total' });
+  return res.status(400).json({ error: 'Missing customer data' });
     }
 
-    const payload = {
-      RequestHeader: {
-        SpecVersion: '1.50',
-        CustomerId: process.env.SAFERPAY_CUSTOMER_ID,
-        RequestId: orderId,
-        RetryIndicator: 0
-      },
-      TerminalId: process.env.SAFERPAY_TERMINAL_ID,
-      Payment: {
-        Amount: { Value: amountMinor, CurrencyCode: currency },
-        OrderId: orderId,
-        Description: 'Payyap Bestellung'
-      },
-      ReturnUrl: {
-        Url: `${process.env.RETURN_BASE_URL}/api/saferpay-return?orderId=${encodeURIComponent(orderId)}`
-      }
-    };
+    const orderId = 'WF-' + Date.now();
+    // ------------------------
+    // 🆕 Order-ID erzeugen: P-YYYYMMDD-XXXX
+    // ------------------------
+    const now = new Date();
+    const ymd =
+      now.getFullYear().toString() +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      String(now.getDate()).padStart(2, '0');
 
-    const r = await fetch(`${saferpayBaseUrl()}/Payment/v1/PaymentPage/Initialize`, {
-      method: 'POST',
-      headers: {
-        Authorization: saferpayAuthHeader(),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    const random4 = Math.floor(1000 + Math.random() * 9000);
+    const orderId = `P-${ymd}-${random4}`;
 
-    const data = await r.json();
-    if (!r.ok) return res.status(500).json(data);
+    const amount = Math.round(Number(total)); // already in cents
 
-    // Betrag für Airtable in CHF
-    const amountChf = amountMinor / 100;
+    // ------------------------
+@@ -46,10 +57,6 @@ export default async function handler(req, res) {
+    const airtableUrl =
+      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${tableName}`;
 
-    // Produkte lesbar
-    const itemsText = items.map(i => `${i.name} x${i.quantity}`).join(', ');
+    console.log('AIRTABLE BASE:', process.env.AIRTABLE_BASE_ID);
+    console.log('AIRTABLE TABLE:', process.env.AIRTABLE_TABLE_NAME);
+    console.log('AIRTABLE TOKEN SET:', !!process.env.AIRTABLE_TOKEN);
 
-    // ⚠️ HIER NUR FELDER, DIE ES IN AIRTABLE WIRKLICH GIBT
-    await createOrder({
-      Name: `${firstName} ${lastName}`.trim() || email,
-      orderId,
-      email,
-      amount: amountChf,
-      currency,
-      status: 'PENDING',
-      items: itemsText,
+    const airtablePayload = {
+      records: [
+        {
+@@ -70,7 +77,7 @@ export default async function handler(req, res) {
+            zip: customer.zip || '',
+            city: customer.city || '',
 
-      company,
-      firstName,
-      lastName,
-      phone,
-      street,
-      houseNumber,
-      zip,
-      city,
-
-      createdAt: new Date().toISOString()
-    });
-
-    return res.json({ redirectUrl: data.RedirectUrl, orderId });
-
-  } catch (e) {
-    console.error('create-payment error:', e);
-    return res.status(500).json({ error: e.message });
-  }
-}
-
+            createdAt: new Date().toISOString()
+            createdAt: new Date() // passt für Datumsfeld in Airtable
+          }
+        }
+      ]
