@@ -102,7 +102,6 @@ export default async function handler(req, res) {
       currency,
       status: 'PENDING',
       items: itemsText,
-      itemsJson,
       paymentMethod: '',
 
       firma,
